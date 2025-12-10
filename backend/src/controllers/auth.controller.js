@@ -5,8 +5,7 @@ import User from "../models/User.js";
 import { validateRollNumber } from "../utils/rollValidator.js";
 
 /**
- * ✅ STEP 1: VALIDATE ROLL (ONLY FORMAT CHECK — NO DB CHECK)
- * This just checks if the roll number follows ITM logic.
+ * ✅ STEP 1: VALIDATE ROLL (ONLY FORMAT CHECK)
  */
 export const validateRoll = async (req, res) => {
   try {
@@ -28,7 +27,6 @@ export const validateRoll = async (req, res) => {
       });
     }
 
-    // ✅ ONLY CONFIRM IT IS A VALID ITM ROLL
     return res.status(200).json({
       success: true,
       message: "Valid ITM roll number",
@@ -42,7 +40,7 @@ export const validateRoll = async (req, res) => {
 };
 
 /**
- * ✅ STEP 2: REDIRECT TO GOOGLE (WITH ROLL NUMBER)
+ * ✅ STEP 2: REDIRECT TO GOOGLE WITH ROLL VIA STATE
  */
 export const googleAuthRedirect = (req, res) => {
   const { rollNumber } = req.query;
@@ -59,18 +57,18 @@ export const googleAuthRedirect = (req, res) => {
     response_type: "code",
     scope: "openid email profile",
     prompt: "consent",
-    state: rollNumber, // ✅ PASS ROLL SECURELY VIA STATE
+    state: rollNumber, // ✅ MOST IMPORTANT LINE
   })}`;
 
   res.redirect(url);
 };
 
 /**
- * ✅ STEP 3: GOOGLE CALLBACK → AUTO REGISTER OR LOGIN → JWT
+ * ✅ STEP 3: GOOGLE CALLBACK → AUTO LOGIN / REGISTER → JWT
  */
 export const googleAuthCallback = async (req, res) => {
   try {
-    const { code, state } = req.query; // ✅ state = rollNumber
+    const { code, state } = req.query; // ✅ state contains rollNumber
 
     if (!code || !state) {
       return res.redirect(
@@ -78,7 +76,7 @@ export const googleAuthCallback = async (req, res) => {
       );
     }
 
-    // ✅ Re-validate roll safely on backend
+    // ✅ RE-VALIDATE ROLL
     const rollResult = validateRollNumber(state);
     if (!rollResult.valid) {
       return res.redirect(
@@ -86,7 +84,7 @@ export const googleAuthCallback = async (req, res) => {
       );
     }
 
-    // ✅ Exchange code → Google access token
+    // ✅ EXCHANGE CODE FOR ACCESS TOKEN
     const tokenRes = await axios.post(
       "https://oauth2.googleapis.com/token",
       qs.stringify({
@@ -101,7 +99,7 @@ export const googleAuthCallback = async (req, res) => {
 
     const { access_token } = tokenRes.data;
 
-    // ✅ Fetch Google profile
+    // ✅ FETCH GOOGLE USER
     const userRes = await axios.get(
       "https://www.googleapis.com/oauth2/v2/userinfo",
       {
@@ -111,7 +109,7 @@ export const googleAuthCallback = async (req, res) => {
 
     const googleUser = userRes.data;
 
-    // ✅ FIND OR CREATE USER (AUTO REGISTER)
+    // ✅ AUTO LOGIN / AUTO REGISTER
     let user = await User.findOne({ email: googleUser.email });
 
     if (!user) {
@@ -126,11 +124,11 @@ export const googleAuthCallback = async (req, res) => {
       });
     }
 
-    // ✅ CREATE JWT
+    // ✅ CREATE JWT (7 DAYS → YOU CAN CHANGE TO 30d)
     const token = jwt.sign(
       { userId: user._id },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "30d" } // ✅ 1 MONTH LOGIN SUPPORT ADDED
     );
 
     return res.redirect(
